@@ -1,0 +1,433 @@
+// ============================================================
+// Prisma Schema — AI Prompt Optimization Platform
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // extensions = [vector, uuidOssp(map: "uuid-ossp")]  // Enable after installing pgvector
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum OptimizationStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CACHED
+}
+
+enum AIProvider {
+  OPENAI
+  ANTHROPIC
+  GEMINI
+}
+
+enum OptimizationType {
+  COMPRESSION
+  SUMMARIZATION
+  SEMANTIC_OPTIMIZATION
+  FULL_OPTIMIZATION
+}
+
+enum PromptType {
+  GENERAL
+  CODING
+  AGENT
+  SYSTEM
+  INSTRUCTION
+  TECHNICAL
+  CONVERSATIONAL
+}
+
+enum OptimizationMode {
+  SAFE
+  BALANCED
+  AGGRESSIVE
+}
+
+enum RequestStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  RATE_LIMITED
+  CACHED
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  name      String?
+  image     String?
+  apiKey    String    @unique @default(cuid())
+  role      UserRole  @default(USER)
+
+  // Soft delete
+  deletedAt DateTime?
+
+  // Audit
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // NextAuth relations
+  accounts Account[]
+  sessions Session[]
+
+  promptHistory       PromptHistory[]
+  optimizationResults OptimizationResult[]
+  aiRequests          AIRequest[]
+  modelUsage          ModelUsage[]
+  usageStats          UsageStat[]
+  tokenAnalytics      TokenAnalytic[]
+
+  @@index([email])
+  @@index([apiKey])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+// ─── NextAuth Tables ──────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── Prompt History ───────────────────────────────────────────────────────────
+
+model PromptHistory {
+  id      String @id @default(cuid())
+  userId  String
+
+  // Content
+  originalContent   String  @db.Text
+  optimizedContent  String? @db.Text
+  title             String?
+  tags              String[]
+  promptType        PromptType @default(GENERAL)
+
+  // Token snapshot at time of save
+  originalTokenCount  Int?
+  optimizedTokenCount Int?
+  compressionRatio    Float?
+
+  // Versioning — each optimization creates a new version
+  version   Int     @default(1)
+  parentId  String? // points to previous version
+
+  // Soft delete
+  deletedAt DateTime?
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent PromptHistory? @relation("PromptVersions", fields: [parentId], references: [id])
+  children PromptHistory[] @relation("PromptVersions")
+
+  optimizationResults OptimizationResult[]
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([promptType])
+  @@index([deletedAt])
+  @@map("prompt_history")
+}
+
+// ─── Optimization Results ─────────────────────────────────────────────────────
+
+model OptimizationResult {
+  id            String @id @default(cuid())
+  userId        String
+  promptId      String?
+
+  // Workflow
+  requestId     String  @unique
+  status        OptimizationStatus @default(PENDING)
+  type          OptimizationType
+  mode          OptimizationMode
+  promptType    PromptType
+
+  // Content
+  originalPrompt  String @db.Text
+  optimizedPrompt String? @db.Text
+  systemPrompt    String? @db.Text
+
+  // Provider
+  provider AIProvider
+  model    String
+
+  // Token analytics
+  inputTokens      Int?
+  outputTokens     Int?
+  savedTokens      Int?
+  compressionRatio Float?
+
+  // Semantic validation
+  semanticScore       Float?
+  meaningPreservation Float?
+  validationPassed    Boolean?
+
+  // Quality
+  qualityScore         Int?
+  tokenEfficiencyScore Int?
+
+  // Cost
+  estimatedCostUsd Float?
+  actualCostUsd    Float?
+  savedCostUsd     Float?
+
+  // Performance
+  processingTimeMs Int?
+  fromCache        Boolean @default(false)
+  cacheType        String?
+
+  // Agent trace (JSON)
+  agentTrace Json?
+
+  // Error
+  errorMessage String?
+  retryCount   Int     @default(0)
+
+  // Soft delete
+  deletedAt DateTime?
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt PromptHistory? @relation(fields: [promptId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([requestId])
+  @@index([status])
+  @@index([userId, createdAt])
+  @@index([deletedAt])
+  @@map("optimization_results")
+}
+
+// ─── AI Requests ──────────────────────────────────────────────────────────────
+
+model AIRequest {
+  id        String @id @default(cuid())
+  userId    String?
+  requestId String @unique
+
+  // Request details
+  provider    AIProvider
+  model       String
+  status      RequestStatus @default(PENDING)
+  endpoint    String
+  ipAddress   String?
+  userAgent   String?
+
+  // Payload sizes (not storing full content for privacy)
+  inputCharCount  Int?
+  outputCharCount Int?
+
+  // Token usage
+  inputTokens  Int?
+  outputTokens Int?
+  totalTokens  Int?
+
+  // Cost
+  costUsd Float?
+
+  // Performance
+  latencyMs    Int?
+  fromCache    Boolean @default(false)
+  cacheType    String?
+
+  // Error
+  errorCode    String?
+  errorMessage String?
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([requestId])
+  @@index([provider, model])
+  @@index([status])
+  @@index([createdAt])
+  @@map("ai_requests")
+}
+
+// ─── Token Analytics ──────────────────────────────────────────────────────────
+
+model TokenAnalytic {
+  id     String @id @default(cuid())
+  userId String
+
+  // Context
+  requestId    String?
+  provider     AIProvider
+  model        String
+  promptType   PromptType
+  mode         OptimizationMode
+
+  // Token counts
+  originalTokens   Int
+  optimizedTokens  Int
+  savedTokens      Int
+  compressionRatio Float
+
+  // Cost impact
+  originalCostUsd  Float
+  optimizedCostUsd Float
+  savedCostUsd     Float
+
+  // Semantic quality
+  semanticScore Float?
+  qualityScore  Int?
+
+  // Audit
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([provider, model])
+  @@index([promptType])
+  @@map("token_analytics")
+}
+
+// ─── Model Usage ──────────────────────────────────────────────────────────────
+
+model ModelUsage {
+  id     String @id @default(cuid())
+  userId String
+
+  // Aggregation key
+  date     DateTime   @db.Date
+  provider AIProvider
+  model    String
+
+  // Counters
+  totalRequests     Int @default(0)
+  successfulRequests Int @default(0)
+  failedRequests    Int @default(0)
+  cachedRequests    Int @default(0)
+
+  // Token totals
+  totalInputTokens  Int @default(0)
+  totalOutputTokens Int @default(0)
+  totalSavedTokens  Int @default(0)
+
+  // Cost totals
+  totalCostUsd  Float @default(0)
+  savedCostUsd  Float @default(0)
+
+  // Latency
+  avgLatencyMs Float @default(0)
+  p95LatencyMs Int?
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date, provider, model])
+  @@index([userId])
+  @@index([date])
+  @@index([provider, model])
+  @@map("model_usage")
+}
+
+// ─── Usage Stats (daily rollup) ───────────────────────────────────────────────
+
+model UsageStat {
+  id               String     @id @default(cuid())
+  userId           String
+  date             DateTime   @db.Date
+  provider         AIProvider
+  model            String
+  totalRequests    Int        @default(0)
+  totalInputTokens Int        @default(0)
+  totalOutputTokens Int       @default(0)
+  totalCostUsd     Float      @default(0)
+  cacheHits        Int        @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date, provider, model])
+  @@index([userId])
+  @@index([date])
+  @@map("usage_stats")
+}
+
+// ─── Semantic Cache ───────────────────────────────────────────────────────────
+
+model SemanticCache {
+  id         String   @id @default(cuid())
+  promptHash String   @unique
+  // embedding  Unsupported("vector(1536)")?  // Enable after installing pgvector
+  response   String   @db.Text
+  model      String
+  tokenCount Int
+  hitCount   Int      @default(0)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([promptHash])
+  @@index([expiresAt])
+  @@map("semantic_cache")
+}
