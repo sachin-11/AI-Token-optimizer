@@ -7,7 +7,13 @@ const nextConfig: NextConfig = {
   // tiktoken ships a WASM binary that webpack 5 cannot parse.
   // Marking it as a server external lets Node.js load it natively at runtime
   // instead of going through the webpack bundle pipeline.
-  serverExternalPackages: ["tiktoken"],
+  serverExternalPackages: [
+    "tiktoken",
+    // onnxruntime-node is an optional ML dependency — only needed after running
+    // the Python training script and installing it manually. Exclude from the
+    // webpack bundle so the build succeeds without it being installed.
+    "onnxruntime-node",
+  ],
 
   // TypeScript strict mode has pre-existing failures in backend/agent modules.
   typescript: {
@@ -71,6 +77,9 @@ const nextConfig: NextConfig = {
         // tiktoken ships a WASM binary — exclude from webpack and let Node.js
         // require() it at runtime where WASM works without extra config
         "tiktoken",
+        // onnxruntime-node — optional ML runtime, only present after manual install.
+        // Handled gracefully in ModeAdvisorService: falls back to rule-based logic.
+        "onnxruntime-node",
       ];
     }
 
