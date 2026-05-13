@@ -3,13 +3,15 @@
 // ============================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  // extensions = [vector, uuidOssp(map: "uuid-ossp")]  // Enable after installing pgvector
+  url        = env("DATABASE_URL")    // Neon pooler — used by the app at runtime
+  directUrl  = env("DIRECT_URL")      // Neon direct — used by prisma db push / migrate
+  extensions = [vector(map: "vector"), uuidOssp(map: "uuid-ossp")]
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -234,6 +236,9 @@ model OptimizationResult {
   fromCache        Boolean @default(false)
   cacheType        String?
 
+  /// SHA-256 hex: prompt + model + mode + targetTokens — dedupe identical playground/API requests
+  inputHash String? @map("input_hash") @db.VarChar(64)
+
   // Agent trace (JSON)
   agentTrace Json?
 
@@ -256,6 +261,7 @@ model OptimizationResult {
   @@index([status])
   @@index([userId, createdAt])
   @@index([deletedAt])
+  @@index([inputHash, status])
   @@map("optimization_results")
 }
 
@@ -417,17 +423,45 @@ model UsageStat {
 // ─── Semantic Cache ───────────────────────────────────────────────────────────
 
 model SemanticCache {
-  id         String   @id @default(cuid())
-  promptHash String   @unique
-  // embedding  Unsupported("vector(1536)")?  // Enable after installing pgvector
-  response   String   @db.Text
+  id         String                      @id @default(cuid())
+  promptHash String                      @unique
+  embedding  Unsupported("vector(1536)")?
+  response   String                      @db.Text
   model      String
   tokenCount Int
-  hitCount   Int      @default(0)
+  hitCount   Int                         @default(0)
   expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  createdAt  DateTime                    @default(now())
 
   @@index([promptHash])
   @@index([expiresAt])
   @@map("semantic_cache")
+}
+
+// ─── Workflow Semantic Cache ──────────────────────────────────────────────────
+// ML Layer 1: caches full WorkflowResult objects keyed by prompt embedding.
+// New requests that are semantically similar (cosine >= 0.92) skip the entire
+// 4-agent pipeline and get served from here in ~100ms instead of ~10-30s.
+
+model WorkflowSemanticCache {
+  id             String                      @id @default(cuid())
+  /// SHA-256 of the original prompt text — dedup key
+  promptHash     String                      @unique
+  /// Original prompt text — returned to client for transparency
+  originalPrompt String                      @db.Text
+  /// 1536-dim text-embedding-3-small vector
+  embedding      Unsupported("vector(1536)")?
+  model          String
+  mode           OptimizationMode
+  /// Serialised WorkflowResult JSON
+  result         Json
+  tokensSaved    Int
+  qualityScore   Int
+  hitCount       Int                         @default(0)
+  expiresAt      DateTime
+  createdAt      DateTime                    @default(now())
+
+  @@index([model, mode])
+  @@index([expiresAt])
+  @@map("workflow_semantic_cache")
 }

@@ -107,4 +107,19 @@ export const CacheKeyFactory = {
       .digest("hex")
       .slice(0, 24);
   },
+
+  /**
+   * Exact key for workflow optimization cache (prompt + model + mode + optional target).
+   * Full 64-char hex — independent of AI response hash (different namespace).
+   */
+  hashOptimizationInput(prompt: string, model: string, mode: string, targetTokens?: number): string {
+    const normalized = prompt.trim().toLowerCase().replace(/\s+/g, " ");
+    const payload = `${model}\0${mode}\0${targetTokens ?? ""}\0${normalized}`;
+    return crypto.createHash("sha256").update(payload, "utf8").digest("hex");
+  },
+
+  /** Redis key for cached WorkflowResult JSON */
+  optimizationWorkflow(inputHash: string): string {
+    return key("optwf", inputHash);
+  },
 } as const;

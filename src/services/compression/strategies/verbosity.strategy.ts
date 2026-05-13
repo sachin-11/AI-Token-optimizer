@@ -82,10 +82,30 @@ const INSTRUCTION_SUBSTITUTIONS: Substitution[] = [
   { pattern: /\bIf (the )?user (asks?|requests?|wants?)\b/gi, replacement: "If user requests,", description: "if-user-asks→if-requests" },
 ];
 
+// Natural-language wrappers around coding tasks — prompts often classify as CODING because of the word "function"
+const CODING_PROSE_SUBSTITUTIONS: Substitution[] = [
+  { pattern: /\bWrite a Python function that\b/gi, replacement: "Python fn:", description: "write-py-fn-colon" },
+  { pattern: /\bCreate a Python function that\b/gi, replacement: "Python fn:", description: "create-py-fn-colon" },
+  { pattern: /\bWrite a function (in Python )?that\b/gi, replacement: "Fn:", description: "write-fn-colon" },
+  { pattern: /\bImplement a (python )?function that\b/gi, replacement: "Implement fn:", description: "implement-fn" },
+  { pattern: /\bPlease write\b/gi, replacement: "Write", description: "please-write" },
+  { pattern: /\bI would like you to write\b/gi, replacement: "Write", description: "i-would-like-write" },
+  { pattern: /\bI need you to write\b/gi, replacement: "Write", description: "i-need-write" },
+  { pattern: /\bThe function should\b/gi, replacement: "Should", description: "fn-should" },
+  { pattern: /\bThe function must\b/gi, replacement: "Must", description: "fn-must" },
+  { pattern: /\bMake sure (to |that you )?/gi, replacement: "Ensure ", description: "make-sure→ensure" },
+  { pattern: /\bInclude proper error handling\b/gi, replacement: "Handle errors", description: "proper-err-handling" },
+  { pattern: /\bwith error handling\b/gi, replacement: "handle errors", description: "with-error-handling" },
+  { pattern: /\bAdd comments (to explain|explaining)?\b/gi, replacement: "Comment", description: "add-comments" },
+  { pattern: /\bEdge cases should be handled\b/gi, replacement: "Handle edge cases", description: "edge-cases" },
+  { pattern: /\bIt needs to handle\b/gi, replacement: "Handle", description: "it-needs-handle" },
+];
+
 export class VerbosityStrategy implements ICompressionStrategy {
   readonly name = "verbosity-reduction";
   readonly description = "Replace verbose phrases with concise equivalents";
-  readonly minimumMode = OptimizationMode.BALANCED;
+  /** SAFE: deterministic phrase shortening only; no LLM. */
+  readonly minimumMode = OptimizationMode.SAFE;
   readonly applicableTypes: PromptType[] = []; // All types
 
   async apply(text: string, context: StrategyContext): Promise<StrategyResult> {
@@ -94,6 +114,7 @@ export class VerbosityStrategy implements ICompressionStrategy {
 
     const substitutions = [
       ...GENERAL_SUBSTITUTIONS,
+      ...(context.promptType === PromptType.CODING ? CODING_PROSE_SUBSTITUTIONS : []),
       // Add instruction substitutions for agent/system/instruction prompts
       ...(
         [PromptType.AGENT, PromptType.SYSTEM, PromptType.INSTRUCTION].includes(context.promptType)

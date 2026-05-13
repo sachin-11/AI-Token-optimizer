@@ -18,12 +18,15 @@ import { CACHE_CONFIG } from "@/config/app";
 // ─── Base TTLs (seconds) ──────────────────────────────────────────────────────
 
 const BASE_TTLS = {
-  embedding:    86_400,   // 24 hours
-  hashResponse: 3_600,    // 1 hour
-  semantic:     CACHE_CONFIG.semantic.ttlSeconds,
-  meta:         86_400,   // 24 hours
-  stats:        604_800,  // 7 days
-  rateLimit:    60,       // 1 minute window
+  embedding: 86_400, // 24 hours
+  hashResponse: 3_600, // 1 hour
+  semantic: CACHE_CONFIG.semantic.ttlSeconds,
+  // Workflow results are expensive to produce (~10-30s, multiple LLM calls)
+  // — cache them much longer than simple AI responses.
+  workflowSemantic: 86_400, // 24 hours (base)
+  meta: 86_400, // 24 hours
+  stats: 604_800, // 7 days
+  rateLimit: 60, // 1 minute window
 } as const;
 
 // Models that warrant longer cache TTL due to high cost
@@ -41,13 +44,27 @@ export const TtlManager = {
 
   hashResponse(model: string): number {
     // High-value models cached 4x longer — cost savings justify it
-    return HIGH_VALUE_MODELS.has(model)
-      ? BASE_TTLS.hashResponse * 4
-      : BASE_TTLS.hashResponse;
+    return HIGH_VALUE_MODELS.has(model) ? BASE_TTLS.hashResponse * 4 : BASE_TTLS.hashResponse;
+  },
+
+  /** Full optimization workflow snapshot (exact prompt + model + mode) — same TTL as hash tier */
+  optimizationWorkflow(model: string): number {
+    return this.hashResponse(model);
   },
 
   semantic(): number {
     return BASE_TTLS.semantic;
+  },
+
+  /**
+   * TTL for full WorkflowResult objects in the semantic cache.
+   * Workflow results are expensive to produce, so we keep them longer.
+   * High-value models (GPT-4o, Claude Opus) get 48 h; others get 24 h.
+   */
+  workflowSemantic(model: string): number {
+    return HIGH_VALUE_MODELS.has(model)
+      ? BASE_TTLS.workflowSemantic * 2 // 48 hours
+      : BASE_TTLS.workflowSemantic; // 24 hours
   },
 
   meta(): number {

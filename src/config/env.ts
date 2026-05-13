@@ -25,9 +25,12 @@ const envSchema = z.object({
   DATABASE_POOL_MIN: z.coerce.number().int().min(1).default(2),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
 
-  // Redis
+  // Redis — Upstash (TCP via ioredis)
+  // URL format: rediss://default:TOKEN@host.upstash.io:6380
   REDIS_URL: z.string().min(1, "REDIS_URL is required"),
-  REDIS_PASSWORD: z.string().optional(),
+  // Upstash REST (used by @upstash/redis if needed, and for Vercel env reference)
+  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 
   // OpenAI — optional in dev so app starts without a real key
   OPENAI_API_KEY: z.string().min(1, "OPENAI_API_KEY is required").default("sk-placeholder"),

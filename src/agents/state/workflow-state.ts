@@ -19,7 +19,6 @@ import { nanoid } from "nanoid";
 
 import {
   AgentName,
-  OptimizationMode,
   SupervisorDecision,
   WorkflowStatus,
   type AgentError,
@@ -30,7 +29,10 @@ import {
   type StreamEvent,
   type TokenAnalysisOutput,
 } from "@/types/agent";
-import type { CompressionResult, PromptType } from "@/types/compression";
+// OptimizationMode is an enum (runtime value). @/types/agent only re-exports it
+// as `import type`, which is erased at build time. Import the value directly
+// from its source so OptimizationMode.BALANCED is defined at runtime.
+import { OptimizationMode, type CompressionResult, type PromptType } from "@/types/compression";
 import type { AIModel } from "@/types/ai";
 
 // ─── State Annotation ─────────────────────────────────────────────────────────

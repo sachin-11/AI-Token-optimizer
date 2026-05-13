@@ -17,8 +17,8 @@
  * - Validate before returning: never return broken output
  *
  * Strategy selection by mode:
- * SAFE:       whitespace + deduplication
- * BALANCED:   + verbosity + redundancy
+ * SAFE:       whitespace + deduplication + redundancy + concise phrase substitution
+ * BALANCED:   same as SAFE (shared rule ceiling); mode still guides analyzer / downstream agents
  * AGGRESSIVE: + semantic (LLM-based)
  */
 
@@ -87,15 +87,15 @@ export class CompressionPipeline {
       "Starting compression pipeline",
     );
 
-    // ── Stage 1: Analyze ────────────────────────────────────────────────────
-    const analysis = this.promptAnalyzer.analyze(originalText);
+    // ── Stage 1: Analyze (ML-enhanced — async embedding classifier) ────────
+    const analysis = await this.promptAnalyzer.analyze(originalText);
     const promptType = request.promptType ?? analysis.type;
 
     // ── Stage 2: Protect ────────────────────────────────────────────────────
-    const { text: protectedText, regions } = this.regionProtector.protect(
-      originalText,
-      [...analysis.protectedPatterns, ...(request.preservePatterns ?? [])],
-    );
+    const { text: protectedText, regions } = this.regionProtector.protect(originalText, [
+      ...analysis.protectedPatterns,
+      ...(request.preservePatterns ?? []),
+    ]);
 
     // ── Stage 3: Apply Strategies ───────────────────────────────────────────
     const context: StrategyContext = {
@@ -121,15 +121,12 @@ export class CompressionPipeline {
     ]);
 
     const compressionRatio =
-      originalCount.tokenCount > 0
-        ? compressedCount.tokenCount / originalCount.tokenCount
-        : 1.0;
+      originalCount.tokenCount > 0 ? compressedCount.tokenCount / originalCount.tokenCount : 1.0;
 
     const validation = this.validator.validate(originalText, compressedText, compressionRatio);
 
     // If validation says use original, return it
-    const finalText =
-      validation.recommendation === "use_original" ? originalText : compressedText;
+    const finalText = validation.recommendation === "use_original" ? originalText : compressedText;
 
     // ── Stage 6: Measure ────────────────────────────────────────────────────
     const compressionAnalysis = await this.compressionAnalyzer.analyzeCompression(
@@ -182,9 +179,7 @@ export class CompressionPipeline {
     for (const message of messages) {
       // System messages: use one mode higher (they're usually verbose)
       const messageMode =
-        message.role === "system"
-          ? this.escalateMode(request.mode)
-          : request.mode;
+        message.role === "system" ? this.escalateMode(request.mode) : request.mode;
 
       const result = await this.compress({
         ...request,

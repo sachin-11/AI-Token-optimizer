@@ -14,6 +14,7 @@
 import "server-only";
 
 import { PromptType } from "@/types/compression";
+import { getEmbeddingPromptClassifier } from "@/services/ml";
 
 // ─── Analysis Result ──────────────────────────────────────────────────────────
 
@@ -28,13 +29,13 @@ export interface PromptAnalysis {
 export interface PromptCharacteristics {
   hasCodeBlocks: boolean;
   hasUrls: boolean;
-  hasVariables: boolean;        // {{variable}} or {variable} patterns
+  hasVariables: boolean; // {{variable}} or {variable} patterns
   hasNumberedLists: boolean;
   hasBulletLists: boolean;
   hasJsonOrXml: boolean;
   hasMarkdown: boolean;
   hasAgentInstructions: boolean; // "You are...", "Your task is..."
-  hasConstraints: boolean;       // "Do not...", "Never...", "Always..."
+  hasConstraints: boolean; // "Do not...", "Never...", "Always..."
   estimatedComplexity: "low" | "medium" | "high";
   wordCount: number;
   sentenceCount: number;
@@ -52,7 +53,8 @@ const PATTERNS = {
   bulletList: /^\s*[-*•]\s+/m,
   json: /\{[\s\S]*"[\w]+"\s*:/,
   xml: /<[a-zA-Z][^>]*>[\s\S]*?<\/[a-zA-Z]+>/,
-  agentInstruction: /\b(you are|your (role|task|job|goal|purpose) is|act as|behave as|you must|you should)\b/i,
+  agentInstruction:
+    /\b(you are|your (role|task|job|goal|purpose) is|act as|behave as|you must|you should)\b/i,
   constraint: /\b(do not|don't|never|always|must not|cannot|avoid|prohibited|forbidden)\b/i,
   markdown: /#{1,6}\s+\w|^\*\*[^*]+\*\*|__[^_]+__/m,
 } as const;
@@ -62,12 +64,34 @@ const PATTERNS = {
 export class PromptAnalyzer {
   /**
    * Analyze a prompt and return its type + characteristics.
+   *
+   * ML path: tries embedding-based kNN classifier first (confidence >= 0.72).
+   * Rule-based fallback: original regex logic used when ML is uncertain.
    */
-  analyze(text: string): PromptAnalysis {
+  async analyze(text: string): Promise<PromptAnalysis> {
+    const characteristics = this.extractCharacteristics(text);
+
+    // ML path — try embedding classifier, fall back to regex on low confidence
+    let type: PromptType;
+    try {
+      const mlResult = await getEmbeddingPromptClassifier().classify(text);
+      type = mlResult ? mlResult.type : this.detectType(text, characteristics);
+    } catch {
+      type = this.detectType(text, characteristics);
+    }
+
+    const protectedPatterns = this.buildProtectedPatterns(characteristics);
+    return { type, characteristics, protectedPatterns };
+  }
+
+  /**
+   * Synchronous version — uses rule-based only (no ML).
+   * Use when you need an instant result and async is not possible.
+   */
+  analyzeSync(text: string): PromptAnalysis {
     const characteristics = this.extractCharacteristics(text);
     const type = this.detectType(text, characteristics);
     const protectedPatterns = this.buildProtectedPatterns(characteristics);
-
     return { type, characteristics, protectedPatterns };
   }
 
@@ -90,8 +114,7 @@ export class PromptAnalyzer {
       estimatedComplexity: this.estimateComplexity(text, words.length),
       wordCount: words.length,
       sentenceCount: sentences.length,
-      avgWordsPerSentence:
-        sentences.length > 0 ? Math.round(words.length / sentences.length) : 0,
+      avgWordsPerSentence: sentences.length > 0 ? Math.round(words.length / sentences.length) : 0,
     };
   }
 
@@ -104,10 +127,7 @@ export class PromptAnalyzer {
     }
 
     // System prompts: starts with role definition, no user question
-    if (
-      chars.hasAgentInstructions &&
-      (lower.startsWith("you are") || lower.startsWith("you're"))
-    ) {
+    if (chars.hasAgentInstructions && (lower.startsWith("you are") || lower.startsWith("you're"))) {
       return PromptType.SYSTEM;
     }
 
@@ -115,23 +135,24 @@ export class PromptAnalyzer {
     if (
       chars.hasCodeBlocks ||
       chars.hasJsonOrXml ||
-      /\b(function|class|const|let|var|def|import|export|return|async|await|interface|type)\b/.test(text)
+      /\b(function|class|const|let|var|def|import|export|return|async|await|interface|type)\b/.test(
+        text,
+      )
     ) {
       return PromptType.CODING;
     }
 
     // Technical prompts: technical terminology without code
     if (
-      /\b(api|endpoint|database|schema|query|algorithm|architecture|infrastructure|deployment|configuration)\b/i.test(text)
+      /\b(api|endpoint|database|schema|query|algorithm|architecture|infrastructure|deployment|configuration)\b/i.test(
+        text,
+      )
     ) {
       return PromptType.TECHNICAL;
     }
 
     // Instruction prompts: imperative, numbered steps
-    if (
-      chars.hasNumberedLists ||
-      (chars.hasConstraints && chars.estimatedComplexity !== "low")
-    ) {
+    if (chars.hasNumberedLists || (chars.hasConstraints && chars.estimatedComplexity !== "low")) {
       return PromptType.INSTRUCTION;
     }
 
@@ -143,10 +164,7 @@ export class PromptAnalyzer {
     return PromptType.GENERAL;
   }
 
-  private estimateComplexity(
-    text: string,
-    wordCount: number,
-  ): "low" | "medium" | "high" {
+  private estimateComplexity(text: string, wordCount: number): "low" | "medium" | "high" {
     if (wordCount < 50) return "low";
     if (wordCount < 200) return "medium";
     return "high";

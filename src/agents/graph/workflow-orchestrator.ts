@@ -16,7 +16,10 @@ import { nanoid } from "nanoid";
 
 import { createChildLogger } from "@/lib/logger";
 import { getOptimizationGraph } from "@/agents/graph/optimization.graph";
-import { buildInitialState } from "@/agents/state/workflow-state";
+import {
+  buildInitialState,
+  type WorkflowState,
+} from "@/agents/state/workflow-state";
 import {
   WorkflowStatus,
   type WorkflowRequest,
@@ -101,6 +104,7 @@ export class WorkflowOrchestrator {
   async *stream(request: WorkflowRequest): AsyncGenerator<StreamEvent> {
     const requestId = request.requestId ?? nanoid();
     const graph = getOptimizationGraph();
+    const streamStartedAt = Date.now();
 
     const initialState = buildInitialState({
       requestId,
@@ -119,30 +123,56 @@ export class WorkflowOrchestrator {
       data: { requestId },
     };
 
-    // Track which events we've already yielded
-    let lastEventIndex = 0;
-
     try {
-      // LangGraph streamEvents gives us state updates after each node
-      for await (const chunk of await graph.stream(initialState, {
-        streamMode: "updates",
-      })) {
-        // Each chunk is a partial state update from a node
-        const updates = Object.values(chunk) as Array<{ streamEvents?: StreamEvent[] }>;
+      // Stream both partial updates (for per-node streamEvents) and full state snapshots
+      // after each step. We must not call invoke/run again after streaming — that was a
+      // second full workflow and could return a different (often zero-savings) result.
+      let lastValueState: WorkflowState | null = null;
 
-        for (const update of updates) {
-          const newEvents = update.streamEvents ?? [];
-          for (const event of newEvents.slice(lastEventIndex)) {
-            yield event;
+      for await (const chunk of await graph.stream(initialState, {
+        streamMode: ["updates", "values"],
+      })) {
+        if (Array.isArray(chunk) && chunk.length === 2 && typeof chunk[0] === "string") {
+          const [mode, payload] = chunk;
+
+          if (mode === "values") {
+            lastValueState = payload as WorkflowState;
+            continue;
           }
-          lastEventIndex = newEvents.length;
+
+          if (mode === "updates" && payload && typeof payload === "object") {
+            const updates = Object.values(payload) as Array<{ streamEvents?: StreamEvent[] }>;
+            for (const update of updates) {
+              const newEvents = update.streamEvents ?? [];
+              for (const event of newEvents) {
+                yield event;
+              }
+            }
+          }
+          continue;
+        }
+
+        // Single-mode streams yield the payload directly (unexpected with array streamMode)
+        if (chunk && typeof chunk === "object" && !Array.isArray(chunk)) {
+          const updates = Object.values(chunk as Record<string, { streamEvents?: StreamEvent[] }>);
+          for (const update of updates) {
+            for (const event of update.streamEvents ?? []) {
+              yield event;
+            }
+          }
         }
       }
+
+      const workflowResult =
+        lastValueState !== null
+          ? this.buildResult(lastValueState, Date.now() - streamStartedAt)
+          : null;
 
       yield {
         type: "progress",
         message: "Workflow complete",
         timestamp: new Date().toISOString(),
+        data: workflowResult ? { workflowResult } : undefined,
       };
     } catch (error) {
       yield {

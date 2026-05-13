@@ -74,6 +74,15 @@ export interface CompletePayload extends WorkflowResult {
   // All WorkflowResult fields + streaming metadata
   streamDurationMs: number;
   eventCount: number;
+  /**
+   * Set when the workflow was NOT run fresh:
+   * - "redis"    — exact match found in Redis (sub-ms)
+   * - "database" — exact match found in PostgreSQL
+   * - "semantic" — semantically similar prompt found via pgvector HNSW search
+   */
+  servedFromCache?: "redis" | "database" | "semantic";
+  /** Only set when servedFromCache === "semantic" — cosine similarity of the matched prompt */
+  semanticSimilarity?: number;
 }
 
 export interface ErrorPayload {
@@ -109,7 +118,7 @@ export type StreamingPhase =
 export interface StreamingState {
   phase: StreamingPhase;
   isStreaming: boolean;
-  progress: number;           // 0-100
+  progress: number; // 0-100
   currentAgent: AgentName | null;
   message: string;
   events: TypedSSEEvent[];

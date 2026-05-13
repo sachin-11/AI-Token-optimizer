@@ -20,12 +20,9 @@ import { createChildLogger } from "@/lib/logger";
 import { getTokenCounter } from "@/services/token/token-counter.service";
 import { getContextAnalyzer } from "@/services/token/context-analyzer.service";
 import { getCostEstimator } from "@/services/token/cost-estimator.service";
-import { OptimizationMode } from "@/types/compression";
-import {
-  AgentName,
-  WorkflowStatus,
-  type TokenAnalysisOutput,
-} from "@/types/agent";
+import { OptimizationMode, PromptType } from "@/types/compression";
+import { getModeAdvisor } from "@/services/ml";
+import { AgentName, WorkflowStatus, type TokenAnalysisOutput } from "@/types/agent";
 import {
   createStreamEvent,
   createTraceEntry,
@@ -65,9 +62,7 @@ function recommendMode(
 
 // ─── Node Function ────────────────────────────────────────────────────────────
 
-export async function tokenAnalyzerNode(
-  state: WorkflowState,
-): Promise<Partial<WorkflowState>> {
+export async function tokenAnalyzerNode(state: WorkflowState): Promise<Partial<WorkflowState>> {
   const startedAt = new Date();
   log.info({ requestId: state.requestId }, "Token analyzer started");
 
@@ -92,18 +87,29 @@ export async function tokenAnalyzerNode(
       contextAnalysis.fitsInContext,
     );
 
-    const recommendedMode = recommendMode(
-      tokenCount.tokenCount,
-      urgency,
-      state.mode,
+    // ML mode advisor — falls back to rule-based when model is not trained yet
+    const tokenAnalysisPartial: TokenAnalysisOutput = {
+      originalTokenCount: tokenCount.tokenCount,
+      contextWindowAnalysis: contextAnalysis,
+      estimatedCostUsd: costEstimate.cost.totalCostUsd,
+      recommendedMode: state.mode, // placeholder, replaced below
+      compressionNeeded: urgency !== "none" || tokenCount.tokenCount >= 100,
+      compressionUrgency: urgency,
+    };
+    const modeAdvice = await getModeAdvisor().advise(
+      tokenAnalysisPartial,
+      PromptType.GENERAL, // promptType is not known yet at this stage
+      state.mode, // user-requested mode
     );
+    const recommendedMode = modeAdvice.mode;
 
     const output: TokenAnalysisOutput = {
       originalTokenCount: tokenCount.tokenCount,
       contextWindowAnalysis: contextAnalysis,
       estimatedCostUsd: costEstimate.cost.totalCostUsd,
       recommendedMode,
-      compressionNeeded: urgency !== "none" || tokenCount.tokenCount > 200,
+      // Skip compression only for tiny prompts (<100 tokens) when there is no urgency — see module doc above
+      compressionNeeded: urgency !== "none" || tokenCount.tokenCount >= 100,
       compressionUrgency: urgency,
     };
 
@@ -150,7 +156,14 @@ export async function tokenAnalyzerNode(
     return {
       currentAgent: AgentName.TOKEN_ANALYZER,
       status: WorkflowStatus.FAILED,
-      errors: [{ agent: AgentName.TOKEN_ANALYZER, message, timestamp: new Date().toISOString(), retryable: true }],
+      errors: [
+        {
+          agent: AgentName.TOKEN_ANALYZER,
+          message,
+          timestamp: new Date().toISOString(),
+          retryable: true,
+        },
+      ],
       agentTrace: [trace],
       streamEvents: [createStreamEvent("error", message, { agent: AgentName.TOKEN_ANALYZER })],
     };

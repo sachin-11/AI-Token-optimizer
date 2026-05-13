@@ -73,6 +73,29 @@ export async function supervisorNode(
     status = WorkflowStatus.FAILED;
   }
 
+  const compressionErrors = state.errors.filter(
+    (e) => e.agent === AgentName.COMPRESSION && e.retryable,
+  );
+  const isCompressionFailureRetry =
+    decision === SupervisorDecision.RETRY_COMPRESSION && compressionErrors.length > 0;
+
+  // Validation/review-driven retry: must re-run validator after new compression, and bump
+  // retryCount so SAFE mode engages (compression node uses retryCount > 0) and maxRetries applies.
+  // Without clearing validationOutput, supervisor would loop forever on stale "retry_with_safe_mode".
+  if (decision === SupervisorDecision.RETRY_COMPRESSION && !isCompressionFailureRetry) {
+    return {
+      currentAgent: AgentName.SUPERVISOR,
+      supervisorDecision: decision,
+      finalPrompt,
+      status,
+      retryCount: state.retryCount + 1,
+      validationOutput: null,
+      reviewOutput: null,
+      agentTrace: [trace],
+      streamEvents: [event],
+    };
+  }
+
   return {
     currentAgent: AgentName.SUPERVISOR,
     supervisorDecision: decision,

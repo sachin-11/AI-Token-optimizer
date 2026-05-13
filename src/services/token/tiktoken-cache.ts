@@ -2,7 +2,7 @@
  * Tiktoken Encoder Cache
  *
  * Why caching encoders:
- * - `getEncoding()` from tiktoken loads a WASM module + vocabulary file
+ * - `get_encoding()` from tiktoken loads a WASM module + vocabulary file
  * - First call takes ~50-100ms and ~5MB memory per encoding
  * - Subsequent calls with the same encoding should reuse the instance
  * - Without caching, every token count request would pay this cost
@@ -103,8 +103,8 @@ async function initializeEncoder(encoding: TiktokenEncoding): Promise<Tiktoken> 
   const start = Date.now();
 
   // Dynamic import — tiktoken is heavy, only load when needed
-  const { getEncoding } = await import("tiktoken");
-  const encoder = getEncoding(encoding);
+  const { get_encoding } = await import("tiktoken");
+  const encoder = get_encoding(encoding);
 
   log.info({ encoding, initMs: Date.now() - start }, "Tiktoken encoder initialized");
   return encoder;

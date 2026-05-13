@@ -61,6 +61,64 @@ export class OptimizationResultRepository extends BaseRepository {
     } catch (e) { this.handleError(e, "findByRequestId"); }
   }
 
+  async findLatestCompletedByInputHash(inputHash: string): Promise<OptimizationResult | null> {
+    try {
+      return await this.db.optimizationResult.findFirst({
+        where: {
+          inputHash,
+          status:   "COMPLETED",
+          deletedAt: null,
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+    } catch (e) {
+      this.handleError(e, "findLatestCompletedByInputHash");
+    }
+  }
+
+  async createCompletedOptimization(input: {
+    userId: string;
+    requestId: string;
+    inputHash: string;
+    model: string;
+    mode: OptimizationMode;
+    originalPrompt: string;
+    optimizedPrompt: string;
+    savedTokens: number;
+    compressionRatio: number;
+    savedCostUsd: number;
+    qualityScore: number;
+    processingTimeMs: number;
+    agentTrace: Prisma.InputJsonValue | null;
+  }): Promise<OptimizationResult> {
+    try {
+      return await this.db.optimizationResult.create({
+        data: {
+          userId: input.userId,
+          requestId: input.requestId,
+          inputHash: input.inputHash,
+          type: "FULL_OPTIMIZATION",
+          mode: input.mode,
+          promptType: "GENERAL",
+          provider: "OPENAI",
+          model: input.model,
+          originalPrompt: input.originalPrompt,
+          optimizedPrompt: input.optimizedPrompt,
+          status: "COMPLETED",
+          savedTokens: input.savedTokens,
+          compressionRatio: input.compressionRatio,
+          savedCostUsd: input.savedCostUsd,
+          qualityScore: input.qualityScore,
+          processingTimeMs: input.processingTimeMs,
+          agentTrace: input.agentTrace ?? undefined,
+          fromCache: false,
+        },
+      });
+    } catch (e) {
+      this.handleError(e, "createCompletedOptimization");
+    }
+  }
+
   async create(input: CreateOptimizationInput): Promise<OptimizationResult> {
     try {
       return await this.db.optimizationResult.create({ data: input });

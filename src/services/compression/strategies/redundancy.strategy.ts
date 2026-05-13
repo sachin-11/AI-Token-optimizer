@@ -56,8 +56,7 @@ const TAUTOLOGIES = [
 export class RedundancyStrategy implements ICompressionStrategy {
   readonly name = "redundancy-removal";
   readonly description = "Remove preambles, closings, and tautological phrases";
-  readonly minimumMode = OptimizationMode.BALANCED;
-  // Skip for coding prompts — preambles might be intentional context
+  readonly minimumMode = OptimizationMode.SAFE;
   readonly applicableTypes: PromptType[] = [
     PromptType.GENERAL,
     PromptType.AGENT,
@@ -65,6 +64,7 @@ export class RedundancyStrategy implements ICompressionStrategy {
     PromptType.INSTRUCTION,
     PromptType.CONVERSATIONAL,
     PromptType.TECHNICAL,
+    PromptType.CODING,
   ];
 
   async apply(text: string, _context: StrategyContext): Promise<StrategyResult> {
