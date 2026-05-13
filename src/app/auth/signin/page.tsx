@@ -27,6 +27,9 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
   };
 
   const isDev = process.env.NODE_ENV === "development";
+  // Show email/password form whenever ENABLE_CREDENTIALS_LOGIN=true,
+  // regardless of NODE_ENV (works in both dev and production).
+  const showCredentials = process.env.ENABLE_CREDENTIALS_LOGIN === "true";
   const showGoogle = Boolean(process.env.GOOGLE_CLIENT_ID);
   const showGitHub = Boolean(process.env.GITHUB_CLIENT_ID);
 
@@ -44,14 +47,14 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           </div>
         ) : null}
 
-        {isDev ? (
+        {showCredentials ? (
           <div className="space-y-4">
-            <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-center text-xs text-muted-foreground">
-              Development login — OAuth keys optional. Default:{" "}
-              <span className="font-medium text-foreground">DEV_LOGIN_EMAIL</span> /{" "}
-              <span className="font-medium text-foreground">DEV_LOGIN_PASSWORD</span> in{" "}
-              <span className="font-mono">.env.local</span>
-            </div>
+            {isDev && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-center text-xs text-muted-foreground">
+                Development login — set <span className="font-mono">DEV_LOGIN_EMAIL</span> /{" "}
+                <span className="font-mono">DEV_LOGIN_PASSWORD</span> in env
+              </div>
+            )}
             <form action={signInWithDevCredentials} className="space-y-3">
               <input type="hidden" name="callbackUrl" value={callbackUrl ?? "/dashboard"} />
               <div className="space-y-2">
@@ -61,8 +64,8 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
                   name="email"
                   type="email"
                   autoComplete="email"
+                  placeholder="Enter your email"
                   required
-                  defaultValue={process.env.DEV_LOGIN_EMAIL ?? "sachin@moontechnolabs.com"}
                   className="bg-background"
                 />
               </div>
@@ -73,8 +76,8 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
                   name="password"
                   type="password"
                   autoComplete="current-password"
+                  placeholder="Enter your password"
                   required
-                  defaultValue={process.env.DEV_LOGIN_PASSWORD ?? "123456"}
                   className="bg-background"
                 />
               </div>
@@ -85,7 +88,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           </div>
         ) : null}
 
-        {isDev && (showGoogle || showGitHub) ? (
+        {showCredentials && (showGoogle || showGitHub) ? (
           <div className="relative py-2">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t border-border" />
@@ -96,7 +99,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           </div>
         ) : null}
 
-        {!isDev && (showGoogle || showGitHub) ? (
+        {!showCredentials && (showGoogle || showGitHub) ? (
           <p className="text-center text-xs text-muted-foreground">Sign in with your provider</p>
         ) : null}
 
@@ -135,9 +138,10 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
             </form>
           ) : null}
 
-          {!showGoogle && !showGitHub && !isDev ? (
+          {!showGoogle && !showGitHub && !showCredentials ? (
             <p className="text-center text-sm text-muted-foreground">
-              OAuth is not configured. Set <span className="font-mono text-xs">GOOGLE_CLIENT_ID</span> or{" "}
+              OAuth is not configured. Set{" "}
+              <span className="font-mono text-xs">GOOGLE_CLIENT_ID</span> or{" "}
               <span className="font-mono text-xs">GITHUB_CLIENT_ID</span> in your environment.
             </p>
           ) : null}
