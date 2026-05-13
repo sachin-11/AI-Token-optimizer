@@ -60,8 +60,8 @@ export function buildCSP(isDev: boolean, nonce?: string): string {
       ...(isDev ? ["ws://localhost:*", "http://localhost:*"] : []),
     ],
 
-    // No <frame>, <iframe>, <object> needed
-    "frame-src": ["'none'"],
+    // Vercel preview toolbar injects an iframe from vercel.live
+    "frame-src": ["https://vercel.live", "https://*.vercel-scripts.com"],
     "frame-ancestors": ["'none'"],
     "object-src": ["'none'"],
 
