@@ -42,20 +42,13 @@ export default auth(
     const { pathname } = req.nextUrl;
     const requestId = nanoid(12);
 
-    // Generate a fresh nonce for every request.
-    // Next.js reads `x-nonce` from the response headers and stamps it onto
-    // every <script> it renders, so nonce-based CSP works with hydration.
-    const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-
     const response = NextResponse.next({
       request: { headers: new Headers(req.headers) },
     });
 
     // ── 1. Security headers (every response) ──────────────────────────────────
-    applySecurityHeaders(response.headers, isDev, nonce);
+    applySecurityHeaders(response.headers, isDev);
     response.headers.set("X-Request-Id", requestId);
-    // Expose nonce to Next.js so it can stamp <script nonce="..."> tags
-    response.headers.set("x-nonce", nonce);
 
     // ── 2. Scanner probe detection ─────────────────────────────────────────────
     if (isSecurityScanner(pathname)) {
