@@ -77,6 +77,12 @@ const envSchema = z.object({
   // JWT
   JWT_ACCESS_TOKEN_EXPIRY: z.string().default("15m"),
   JWT_REFRESH_TOKEN_EXPIRY: z.string().default("7d"),
+
+  // Credentials login (email + password)
+  // Set ENABLE_CREDENTIALS_LOGIN=true to allow email/password login in any environment.
+  ENABLE_CREDENTIALS_LOGIN: z.enum(["true", "false"]).default("false"),
+  DEV_LOGIN_EMAIL: z.string().email().optional(),
+  DEV_LOGIN_PASSWORD: z.string().optional(),
 });
 
 // ─── Validation ───────────────────────────────────────────────────────────────
