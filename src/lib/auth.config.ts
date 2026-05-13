@@ -15,6 +15,10 @@ import { UserRole } from "@/types/auth";
 export const authConfig = {
   session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60 },
 
+  // Explicitly set secret so NextAuth can sign JWTs in production.
+  // Without this, Auth.js v5 looks for AUTH_SECRET (not NEXTAUTH_SECRET).
+  secret: process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET,
+
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID ?? "",
@@ -33,32 +37,9 @@ export const authConfig = {
     }),
   ],
 
-  cookies: {
-    sessionToken: {
-      name:
-        process.env.NODE_ENV === "production"
-          ? "__Secure-next-auth.session-token"
-          : "next-auth.session-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-      },
-    },
-    csrfToken: {
-      name:
-        process.env.NODE_ENV === "production"
-          ? "__Host-next-auth.csrf-token"
-          : "next-auth.csrf-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-      },
-    },
-  },
+  // Do NOT override cookie names — Auth.js v5 manages them internally.
+  // Custom __Host- / __Secure- prefixes conflict with the CSRF token flow
+  // and cause a 500 on every credentials sign-in in production.
 
   callbacks: {
     /**
